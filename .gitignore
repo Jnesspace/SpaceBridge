@@ -1,0 +1,59 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Exported manifests (may contain sensitive data)
+manifest.json
+*.manifest.json
+
+# Generated Terraform output
+generated/
+generated-from-manifest/
+
+# Terraform secrets (NEVER commit)
+*.tfvars
+!*.tfvars.template
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Debug files
+debug
+*.log

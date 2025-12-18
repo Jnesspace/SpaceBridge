@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "spacectl": {
+      "command": "spacectl",
+      "args": ["mcp", "server"]
+    },
+    "opentofu": {
+        "type": "sse",
+        "url": "https://mcp.opentofu.org/sse"
+      }
+  }
+}
