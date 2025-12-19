@@ -34,17 +34,17 @@ vendor/
 manifest.json
 *.manifest.json
 
-# Generated Terraform output
+# Generated Tofu output
 generated/
 generated-from-manifest/
 
-# Terraform secrets (NEVER commit)
+# Tofu secrets (NEVER commit)
 *.tfvars
 !*.tfvars.template
-.terraform/
+.Tofu/
 *.tfstate
 *.tfstate.*
-terraform
+Tofu
 # OS generated files
 .DS_Store
 .DS_Store?

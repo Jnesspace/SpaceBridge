@@ -41,7 +41,7 @@ func GetPolicyTypeDescription(policyType string) string {
 		PolicyTypeGitPush:        "Filters which git push events trigger runs",
 		PolicyTypeInitialization: "Runs during the initialization phase of a run",
 		PolicyTypeLogin:          "Controls user login and session management",
-		PolicyTypePlan:           "Validates terraform plan output before approval",
+		PolicyTypePlan:           "Validates Tofu plan output before approval",
 		PolicyTypeTask:           "Controls which tasks can be executed",
 		PolicyTypeTrigger:        "Determines when runs should be triggered",
 		PolicyTypeNotification:   "Controls notification routing and filtering",

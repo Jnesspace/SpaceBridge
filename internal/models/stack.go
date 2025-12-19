@@ -10,8 +10,8 @@ type Stack struct {
 	Repository                 string              `json:"repository"`
 	Namespace                  string              `json:"namespace"`
 	ProjectRoot                *string             `json:"projectRoot,omitempty"`
-	Provider                   string              `json:"provider"`      // VCS provider (GITHUB, GITLAB, etc.)
-	VendorType                 string              `json:"vendorType"`    // Stack type (TERRAFORM, ANSIBLE, KUBERNETES, etc.)
+	Provider                   string              `json:"provider"`   // VCS provider (GITHUB, GITLAB, etc.)
+	VendorType                 string              `json:"vendorType"` // Stack type (Tofu, ANSIBLE, KUBERNETES, etc.)
 	RepositoryURL              *string             `json:"repositoryURL,omitempty"`
 	RunnerImage                *string             `json:"runnerImage,omitempty"`
 	TerraformVersion           *string             `json:"terraformVersion,omitempty"`
@@ -71,6 +71,6 @@ type PolicyAttachment struct {
 
 // StackDependency represents a dependency between stacks.
 type StackDependency struct {
-	ID              string `json:"id"`
+	ID               string `json:"id"`
 	DependsOnStackID string `json:"dependsOnStackId"`
 }

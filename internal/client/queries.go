@@ -5,11 +5,11 @@ import graphql "github.com/hasura/go-graphql-client"
 // SpacesQuery is the GraphQL query for fetching all spaces.
 type SpacesQuery struct {
 	Spaces []struct {
-		ID              graphql.ID     `graphql:"id"`
-		Name            graphql.String `graphql:"name"`
-		Description     graphql.String `graphql:"description"`
-		ParentSpace     *graphql.ID    `graphql:"parentSpace"`
-		InheritEntities graphql.Boolean `graphql:"inheritEntities"`
+		ID              graphql.ID       `graphql:"id"`
+		Name            graphql.String   `graphql:"name"`
+		Description     graphql.String   `graphql:"description"`
+		ParentSpace     *graphql.ID      `graphql:"parentSpace"`
+		InheritEntities graphql.Boolean  `graphql:"inheritEntities"`
 		Labels          []graphql.String `graphql:"labels"`
 	} `graphql:"spaces"`
 }
@@ -99,10 +99,10 @@ type ContextsQuery struct {
 			AfterRun      []graphql.String `graphql:"afterRun"`
 		} `graphql:"hooks"`
 		Config []struct {
-			ID          graphql.ID      `graphql:"id"`
-			Type        graphql.String  `graphql:"type"`
-			Value       graphql.String  `graphql:"value"`
-			WriteOnly   graphql.Boolean `graphql:"writeOnly"`
+			ID        graphql.ID      `graphql:"id"`
+			Type      graphql.String  `graphql:"type"`
+			Value     graphql.String  `graphql:"value"`
+			WriteOnly graphql.Boolean `graphql:"writeOnly"`
 		} `graphql:"config"`
 	} `graphql:"contexts"`
 }

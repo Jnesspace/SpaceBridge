@@ -198,7 +198,7 @@ func (c *Client) EnableExternalStateAccess(ctx context.Context, stack models.Sta
 			name: $name
 			repository: $repository
 			vendorConfig: {
-				terraform: {
+				Tofu: {
 					externalStateAccessEnabled: true
 				}
 			}

@@ -19,13 +19,13 @@ import (
 )
 
 var (
-	outputFile      string
-	verbose         bool
-	cfg             *config.Config
-	generateDir     string
-	manifestInput   string
-	disableStacks   bool
-	filterSpace     string
+	outputFile    string
+	verbose       bool
+	cfg           *config.Config
+	generateDir   string
+	manifestInput string
+	disableStacks bool
+	filterSpace   string
 )
 
 func main() {
@@ -78,8 +78,8 @@ It provides safe, validated migrations with full dry-run support.`,
 	// Generate command
 	generateCmd := &cobra.Command{
 		Use:   "generate",
-		Short: "Generate Terraform code from discovered resources",
-		Long: `Generate Terraform code using the Spacelift provider from a manifest file
+		Short: "Generate Tofu code from discovered resources",
+		Long: `Generate Tofu code using the Spacelift provider from a manifest file
 or directly from the source Spacelift account.
 
 The generated code includes:
@@ -90,13 +90,13 @@ The generated code includes:
 
 Example usage:
   # Generate from live discovery (stacks disabled for safe migration)
-  spacebridge generate -o ./terraform/ --disabled
+  spacebridge generate -o ./Tofu/ --disabled
 
   # Generate from existing manifest
-  spacebridge generate -m manifest.json -o ./terraform/`,
+  spacebridge generate -m manifest.json -o ./Tofu/`,
 		RunE: runGenerate,
 	}
-	generateCmd.Flags().StringVarP(&generateDir, "output", "o", "./generated", "Output directory for Terraform files")
+	generateCmd.Flags().StringVarP(&generateDir, "output", "o", "./generated", "Output directory for Tofu files")
 	generateCmd.Flags().StringVarP(&manifestInput, "manifest", "m", "", "Input manifest file (optional, discovers fresh if not provided)")
 	generateCmd.Flags().BoolVarP(&disableStacks, "disabled", "d", false, "Create stacks as disabled for safe state migration")
 	generateCmd.Flags().StringVarP(&filterSpace, "space", "s", "", "Only include resources from this space (and its children)")
@@ -104,7 +104,7 @@ Example usage:
 	// State command group
 	stateCmd := &cobra.Command{
 		Use:   "state",
-		Short: "Manage Terraform state migration",
+		Short: "Manage Tofu state migration",
 	}
 	stateCmd.AddCommand(
 		newStatePlanCmd(),
@@ -286,7 +286,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// runGenerate generates Terraform code from a manifest.
+// runGenerate generates Tofu code from a manifest.
 func runGenerate(cmd *cobra.Command, args []string) error {
 	var manifest *discovery.Manifest
 
@@ -337,23 +337,39 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Generate Terraform code
-	fmt.Printf("\nGenerating Terraform code to: %s\n", generateDir)
-	gen := generator.New(manifest, generateDir).WithDisabledStacks(disableStacks)
-	if err := gen.Generate(); err != nil {
-		return fmt.Errorf("failed to generate Terraform code: %w", err)
+	// Generate Tofu code
+	fmt.Printf("\nGenerating Tofu code to: %s\n", generateDir)
+	gen := generator.New(manifest, generateDir).WithSafeMode(disableStacks)
+
+	// Use destination config if available for provider.tf
+	if cfg.HasDestination() {
+		gen.WithDestinationConfig(&cfg.Destination)
 	}
 
-	// Count stacks with managed state
+	if err := gen.Generate(); err != nil {
+		return fmt.Errorf("failed to generate Tofu code: %w", err)
+	}
+
+	// Count stacks with managed state, autodeploy, and external state access
 	managedStateCount := 0
+	autodeployCount := 0
+	needsAccessCount := 0
+	var needsAccessStacks []string
 	for _, stack := range manifest.Stacks {
-		if stack.ManagesStateFile {
+		if stack.ManagesStateFile && stack.IsTerraform() {
 			managedStateCount++
+			if !stack.ExternalStateAccessEnabled {
+				needsAccessCount++
+				needsAccessStacks = append(needsAccessStacks, stack.Name)
+			}
+		}
+		if stack.Autodeploy {
+			autodeployCount++
 		}
 	}
 
 	// Print summary
-	fmt.Println("\n✓ Terraform code generated successfully!")
+	fmt.Println("\n✓ Tofu code generated successfully!")
 	fmt.Println("\nGenerated resources:")
 	fmt.Printf("  - Spaces:    %d\n", len(manifest.Spaces)-1) // -1 for root
 	fmt.Printf("  - Contexts:  %d\n", len(manifest.Contexts))
@@ -361,8 +377,23 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  - Stacks:    %d\n", len(manifest.Stacks))
 
 	if disableStacks {
-		fmt.Println("\n🔒 Stacks will be created DISABLED (is_disabled = true)")
-		fmt.Printf("   %d stacks with Spacelift-managed state can be migrated\n", managedStateCount)
+		fmt.Println("\n🔒 Safe migration mode enabled:")
+		fmt.Printf("   - All stacks created with autodeploy = false\n")
+		if autodeployCount > 0 {
+			fmt.Printf("   - %d stacks need autodeploy re-enabled after migration\n", autodeployCount)
+			fmt.Printf("   - See autodeploy_re_enable.tf.disabled\n")
+		}
+		fmt.Printf("   - %d stacks with Spacelift-managed state can be migrated\n", managedStateCount)
+
+		if needsAccessCount > 0 {
+			fmt.Printf("\n⚠️  %d stacks need external state access enabled before migration:\n", needsAccessCount)
+			for _, name := range needsAccessStacks {
+				fmt.Printf("   - %s\n", name)
+			}
+			fmt.Println("   Run: spacebridge state enable-access")
+		} else if managedStateCount > 0 {
+			fmt.Println("\n✓ All managed-state stacks already have external state access enabled")
+		}
 	}
 
 	if secretCount > 0 {
@@ -375,14 +406,28 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	fmt.Println("  2. Review and modify generated code as needed")
 	if secretCount > 0 {
 		fmt.Println("  3. Fill in secret values in secrets.auto.tfvars")
-		fmt.Println("  4. terraform init && terraform plan && terraform apply")
+		fmt.Println("  4. Tofu init && Tofu plan && Tofu apply")
 	} else {
-		fmt.Println("  3. terraform init && terraform plan && terraform apply")
+		fmt.Println("  3. Tofu init && Tofu plan && Tofu apply")
 	}
 	if disableStacks && managedStateCount > 0 {
-		fmt.Println("  5. spacebridge state plan    # Preview state migration")
-		fmt.Println("  6. spacebridge state migrate # Migrate state to new stacks")
-		fmt.Println("  7. Enable stacks in Spacelift UI or via API")
+		step := 5
+		if secretCount > 0 {
+			step = 5
+		} else {
+			step = 4
+		}
+		fmt.Printf("  %d. spacebridge state enable-access  # Enable external state access on source\n", step)
+		step++
+		fmt.Printf("  %d. spacebridge state plan           # Preview state migration\n", step)
+		step++
+		fmt.Printf("  %d. spacebridge state migrate        # Migrate state to new stacks\n", step)
+		step++
+		if autodeployCount > 0 {
+			fmt.Printf("  %d. Rename autodeploy_re_enable.tf.disabled → .tf\n", step)
+			step++
+			fmt.Printf("  %d. tofu apply                       # Re-enable autodeploy\n", step)
+		}
 	}
 
 	return nil
@@ -476,7 +521,7 @@ func newStatePlanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plan",
 		Short: "Preview state migration for all stacks",
-		Long: `Shows which stacks can have their Terraform state migrated.
+		Long: `Shows which stacks can have their Tofu state migrated.
 
 Stacks are categorized as:
   ✓ Ready:    Managed state + external access enabled (can migrate)
@@ -517,7 +562,7 @@ func runStatePlan(spaceFilter string) error {
 		stacks = filtered
 	}
 
-	var ready, blocked, skipped, nonTerraform []string
+	var ready, blocked, skipped, nonTofu []string
 	readyStacks := make(map[string]bool)
 
 	for _, stack := range stacks {
@@ -525,7 +570,7 @@ func runStatePlan(spaceFilter string) error {
 			skipped = append(skipped, stack.Name)
 		} else if !stack.IsTerraform() {
 			// Non-Terraform stacks (Ansible, Kubernetes, etc.) don't have TF state
-			nonTerraform = append(nonTerraform, fmt.Sprintf("%s (%s)", stack.Name, friendlyVendorType(stack.VendorType)))
+			nonTofu = append(nonTofu, fmt.Sprintf("%s (%s)", stack.Name, friendlyVendorType(stack.VendorType)))
 		} else if stack.ExternalStateAccessEnabled {
 			ready = append(ready, stack.Name)
 			readyStacks[stack.ID] = true
@@ -557,7 +602,7 @@ func runStatePlan(spaceFilter string) error {
 			fmt.Printf("    • %s\n", name)
 		}
 		fmt.Println("\n  To enable, go to Stack Settings > Backend > Enable 'External State Access'")
-		fmt.Println("  Or use the Spacelift API/Terraform to enable it")
+		fmt.Println("  Or use the Spacelift API/Tofu to enable it")
 	} else {
 		fmt.Println("  All managed-state stacks have external access enabled")
 	}
@@ -574,11 +619,11 @@ func runStatePlan(spaceFilter string) error {
 		fmt.Println("  All stacks use Spacelift-managed state")
 	}
 
-	// Non-Terraform stacks
-	if len(nonTerraform) > 0 {
-		fmt.Printf("\n○ N/A - Non-Terraform Stacks (%d stacks)\n", len(nonTerraform))
-		fmt.Println("  These stacks don't use Terraform state:")
-		for _, name := range nonTerraform {
+	// Non-Tofu stacks
+	if len(nonTofu) > 0 {
+		fmt.Printf("\n○ N/A - Non-Tofu Stacks (%d stacks)\n", len(nonTofu))
+		fmt.Println("  These stacks don't use Tofu state:")
+		for _, name := range nonTofu {
 			fmt.Printf("    • %s\n", name)
 		}
 	}
@@ -586,7 +631,7 @@ func runStatePlan(spaceFilter string) error {
 	// Summary
 	fmt.Println("\n─────────────────────────────────────────────────────────────")
 	fmt.Printf("Total: %d stacks | Ready: %d | Blocked: %d | Skipped: %d | N/A: %d\n",
-		len(stacks), len(ready), len(blocked), len(skipped), len(nonTerraform))
+		len(stacks), len(ready), len(blocked), len(skipped), len(nonTofu))
 
 	if len(blocked) > 0 {
 		fmt.Println("\n⚠️  Run: spacebridge state enable-access")
@@ -621,8 +666,8 @@ This command will:
 // friendlyVendorType converts the GraphQL typename to a friendly name.
 func friendlyVendorType(vendorType string) string {
 	switch vendorType {
-	case "StackConfigVendorTerraform":
-		return "Terraform"
+	case "StackConfigVendorTofu":
+		return "Tofu"
 	case "StackConfigVendorTerragrunt":
 		return "Terragrunt"
 	case "StackConfigVendorAnsible":
@@ -721,8 +766,8 @@ func newStateMigrateCmd() *cobra.Command {
 	var spaceFilter string
 	cmd := &cobra.Command{
 		Use:   "migrate",
-		Short: "Migrate Terraform state from source to destination",
-		Long: `Migrates Terraform state files from source Spacelift account to destination.
+		Short: "Migrate Tofu state from source to destination",
+		Long: `Migrates Tofu state files from source Spacelift account to destination.
 
 This command:
   1. Gets download URLs from source stacks (with external state access)
@@ -731,7 +776,7 @@ This command:
   4. Triggers state import on destination stacks
 
 Prerequisites:
-  - Destination stacks must already exist (run: terraform apply on generated code)
+  - Destination stacks must already exist (run: Tofu apply on generated code)
   - Source stacks must have external state access enabled (run: spacebridge state enable-access)
   - Both SOURCE_* and DESTINATION_* environment variables must be configured
 
@@ -817,7 +862,7 @@ func runStateMigrate(dryRun bool, spaceFilter string) error {
 	var noAccess []string
 
 	for _, stack := range sourceStacks {
-		// Only Terraform stacks with managed state
+		// Only Tofu stacks with managed state
 		if !stack.ManagesStateFile {
 			skipped = append(skipped, stack.Name+" (self-managed state)")
 			continue
@@ -863,7 +908,7 @@ func runStateMigrate(dryRun bool, spaceFilter string) error {
 			for _, name := range notInDest {
 				fmt.Printf("    • %s\n", name)
 			}
-			fmt.Println("\n  Apply Terraform to create destination stacks first")
+			fmt.Println("\n  Apply Tofu to create destination stacks first")
 		}
 		return nil
 	}
@@ -988,7 +1033,7 @@ func newStacksEnableCmd() *cobra.Command {
 		Long: `Enables all disabled stacks in the destination Spacelift account.
 
 Use this command after:
-  1. Creating stacks with is_disabled = true (terraform apply)
+  1. Creating stacks with is_disabled = true (Tofu apply)
   2. Migrating state (spacebridge state migrate)
 
 This command will:

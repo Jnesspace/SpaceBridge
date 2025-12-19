@@ -1,4 +1,4 @@
-// Package generator creates Terraform code from a Spacelift manifest.
+// Package generator creates Tofu code from a Spacelift manifest.
 package generator
 
 import (
@@ -11,13 +11,16 @@ import (
 
 	"github.com/jnesspace/spacebridge/internal/discovery"
 	"github.com/jnesspace/spacebridge/internal/models"
+	"github.com/jnesspace/spacebridge/pkg/config"
 )
 
-// Generator creates Terraform code from a manifest.
+// Generator creates Tofu code from a manifest.
 type Generator struct {
-	manifest       *discovery.Manifest
-	outputDir      string
-	disableStacks  bool // Create stacks as disabled for safe state migration
+	manifest        *discovery.Manifest
+	outputDir       string
+	safeMode        bool                  // Force autodeploy=false for safe state migration
+	autodeployList  []string              // Stacks that originally had autodeploy=true
+	destConfig      *config.AccountConfig // Destination account config for provider
 }
 
 // New creates a new generator.
@@ -28,13 +31,19 @@ func New(manifest *discovery.Manifest, outputDir string) *Generator {
 	}
 }
 
-// WithDisabledStacks sets the generator to create stacks as disabled.
-func (g *Generator) WithDisabledStacks(disabled bool) *Generator {
-	g.disableStacks = disabled
+// WithSafeMode sets the generator to force autodeploy=false for safe migration.
+func (g *Generator) WithSafeMode(safe bool) *Generator {
+	g.safeMode = safe
 	return g
 }
 
-// Generate creates all Terraform files.
+// WithDestinationConfig sets the destination account config for provider.tf.
+func (g *Generator) WithDestinationConfig(cfg *config.AccountConfig) *Generator {
+	g.destConfig = cfg
+	return g
+}
+
+// Generate creates all Tofu files.
 func (g *Generator) Generate() error {
 	// Create output directory
 	if err := os.MkdirAll(g.outputDir, 0755); err != nil {
@@ -68,6 +77,14 @@ func (g *Generator) Generate() error {
 		return err
 	}
 
+	// Generate autodeploy re-enable list if in safe mode
+	if g.safeMode && len(g.autodeployList) > 0 {
+		autodeployTF := g.generateAutodeployReEnable()
+		if err := g.writeFile("autodeploy_re_enable.tf.disabled", autodeployTF); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -83,8 +100,10 @@ func (g *Generator) writeFile(filename, content string) error {
 
 // generateProvider creates the provider configuration.
 func (g *Generator) generateProvider() string {
-	return `# Provider configuration for Spacelift
-# Documentation: https://registry.terraform.io/providers/spacelift-io/spacelift/latest/docs
+	var sb strings.Builder
+
+	sb.WriteString(`# Provider configuration for Spacelift
+# Documentation: https://registry.opentofu.org/providers/spacelift-io/spacelift/latest/docs
 
 terraform {
   required_providers {
@@ -95,7 +114,19 @@ terraform {
   }
 }
 
-# Configure the Spacelift provider
+`)
+
+	if g.destConfig != nil && g.destConfig.URL != "" {
+		// Use destination config from environment
+		sb.WriteString("# Configured for destination account\n")
+		sb.WriteString("provider \"spacelift\" {\n")
+		sb.WriteString(fmt.Sprintf("  api_key_endpoint = %q\n", g.destConfig.URL))
+		sb.WriteString(fmt.Sprintf("  api_key_id       = %q\n", g.destConfig.KeyID))
+		sb.WriteString(fmt.Sprintf("  api_key_secret   = %q\n", g.destConfig.SecretKey))
+		sb.WriteString("}\n")
+	} else {
+		// Fallback to placeholder
+		sb.WriteString(`# Configure the Spacelift provider
 # Set SPACELIFT_API_KEY_ENDPOINT, SPACELIFT_API_KEY_ID, and SPACELIFT_API_KEY_SECRET
 # environment variables, or configure below:
 provider "spacelift" {
@@ -103,7 +134,10 @@ provider "spacelift" {
   # api_key_id       = "your-api-key-id"
   # api_key_secret   = "your-api-key-secret"
 }
-`
+`)
+	}
+
+	return sb.String()
 }
 
 // generateMain creates the main.tf with all resources.
@@ -165,6 +199,10 @@ func (g *Generator) generateMain() (string, error) {
 	sb.WriteString("# STACKS\n")
 	sb.WriteString("# =============================================================================\n\n")
 	for _, stack := range g.manifest.Stacks {
+		// Track stacks that originally had autodeploy enabled
+		if g.safeMode && stack.Autodeploy {
+			g.autodeployList = append(g.autodeployList, stack.Name)
+		}
 		sb.WriteString(g.generateStack(stack))
 		sb.WriteString("\n")
 	}
@@ -205,7 +243,7 @@ func (g *Generator) generateMain() (string, error) {
 	return sb.String(), nil
 }
 
-// generateSpace creates Terraform for a space.
+// generateSpace creates Tofu for a space.
 func (g *Generator) generateSpace(space models.Space) string {
 	resourceName := sanitizeResourceName(space.ID)
 
@@ -235,7 +273,7 @@ func (g *Generator) generateSpace(space models.Space) string {
 	return sb.String()
 }
 
-// generateContext creates Terraform for a context.
+// generateContext creates Tofu for a context.
 func (g *Generator) generateContext(ctx models.Context) string {
 	resourceName := sanitizeResourceName(ctx.ID)
 
@@ -266,7 +304,7 @@ func (g *Generator) generateContext(ctx models.Context) string {
 	return sb.String()
 }
 
-// generateConfigElement creates Terraform for an env var or mounted file.
+// generateConfigElement creates Tofu for an env var or mounted file.
 func (g *Generator) generateConfigElement(contextID string, cfg models.ConfigElement) string {
 	contextResource := sanitizeResourceName(contextID)
 	varName := sanitizeResourceName(contextID + "_" + cfg.ID)
@@ -311,7 +349,7 @@ func (g *Generator) generateConfigElement(contextID string, cfg models.ConfigEle
 	return sb.String()
 }
 
-// generatePolicy creates Terraform for a policy.
+// generatePolicy creates Tofu for a policy.
 func (g *Generator) generatePolicy(policy models.Policy) string {
 	resourceName := sanitizeResourceName(policy.ID)
 
@@ -348,7 +386,7 @@ func (g *Generator) generatePolicy(policy models.Policy) string {
 	return sb.String()
 }
 
-// generateStack creates Terraform for a stack.
+// generateStack creates Tofu for a stack.
 func (g *Generator) generateStack(stack models.Stack) string {
 	resourceName := sanitizeResourceName(stack.ID)
 
@@ -383,17 +421,20 @@ func (g *Generator) generateStack(stack models.Stack) string {
 	}
 
 	sb.WriteString(fmt.Sprintf("  administrative         = %t\n", stack.Administrative))
-	sb.WriteString(fmt.Sprintf("  autodeploy             = %t\n", stack.Autodeploy))
+
+	// In safe mode, force autodeploy=false to prevent runs during migration
+	autodeploy := stack.Autodeploy
+	if g.safeMode && stack.Autodeploy {
+		autodeploy = false
+		sb.WriteString("  autodeploy             = false  # Originally true - re-enable after migration\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("  autodeploy             = %t\n", autodeploy))
+	}
+
 	sb.WriteString(fmt.Sprintf("  autoretry              = %t\n", stack.Autoretry))
 	sb.WriteString(fmt.Sprintf("  enable_local_preview   = %t\n", stack.LocalPreviewEnabled))
 	sb.WriteString(fmt.Sprintf("  protect_from_deletion  = %t\n", stack.ProtectFromDeletion))
 	sb.WriteString(fmt.Sprintf("  manage_state           = %t\n", stack.ManagesStateFile))
-
-	// Create stacks as disabled for safe state migration
-	if g.disableStacks {
-		sb.WriteString("\n  # Created disabled for safe state migration - enable after state import\n")
-		sb.WriteString("  is_disabled = true\n")
-	}
 
 	if len(stack.Labels) > 0 {
 		sb.WriteString(fmt.Sprintf("  labels = %s\n", formatStringList(stack.Labels)))
@@ -410,7 +451,7 @@ func (g *Generator) generateStack(stack models.Stack) string {
 	return sb.String()
 }
 
-// generateContextAttachment creates Terraform for a context attachment.
+// generateContextAttachment creates Tofu for a context attachment.
 func (g *Generator) generateContextAttachment(stackID string, attachment models.ContextAttachment) string {
 	stackResource := sanitizeResourceName(stackID)
 	contextResource := sanitizeResourceName(attachment.ContextID)
@@ -425,7 +466,7 @@ func (g *Generator) generateContextAttachment(stackID string, attachment models.
 	return sb.String()
 }
 
-// generatePolicyAttachment creates Terraform for a policy attachment.
+// generatePolicyAttachment creates Tofu for a policy attachment.
 func (g *Generator) generatePolicyAttachment(stackID string, attachment models.PolicyAttachment) string {
 	stackResource := sanitizeResourceName(stackID)
 	policyResource := sanitizeResourceName(attachment.PolicyID)
@@ -439,7 +480,7 @@ func (g *Generator) generatePolicyAttachment(stackID string, attachment models.P
 	return sb.String()
 }
 
-// generateStackDependency creates Terraform for a stack dependency.
+// generateStackDependency creates Tofu for a stack dependency.
 func (g *Generator) generateStackDependency(stackID string, dep models.StackDependency) string {
 	stackResource := sanitizeResourceName(stackID)
 	dependsOnResource := sanitizeResourceName(dep.DependsOnStackID)
@@ -525,7 +566,7 @@ func (g *Generator) generateSecretsTemplate() string {
 # WARNING: Do not commit this file to version control!
 #
 # For file mounts, provide the file content as a string.
-# You can use file() function in terraform.tfvars if needed.
+# You can use file() function in Tofu.tfvars if needed.
 
 `)
 
@@ -553,6 +594,39 @@ func (g *Generator) generateSecretsTemplate() string {
 			sb.WriteString("\n")
 		}
 	}
+
+	return sb.String()
+}
+
+// generateAutodeployReEnable creates a file with stack updates to re-enable autodeploy.
+func (g *Generator) generateAutodeployReEnable() string {
+	var sb strings.Builder
+
+	sb.WriteString(`# Autodeploy Re-enable Configuration
+# ==================================
+# These stacks originally had autodeploy = true but were set to false
+# for safe state migration.
+#
+# After migration is complete:
+# 1. Rename this file to autodeploy_re_enable.tf (remove .disabled)
+# 2. Run: tofu apply
+# 3. Delete this file or keep for reference
+#
+# Alternatively, update autodeploy in main.tf directly.
+
+`)
+
+	for _, stackName := range g.autodeployList {
+		resourceName := sanitizeResourceName(stackName)
+		sb.WriteString(fmt.Sprintf(`# Re-enable autodeploy for: %s
+resource "spacelift_stack" "%s" {
+  autodeploy = true
+}
+
+`, stackName, resourceName))
+	}
+
+	sb.WriteString(fmt.Sprintf("# Total stacks to re-enable: %d\n", len(g.autodeployList)))
 
 	return sb.String()
 }
@@ -596,7 +670,7 @@ func (g *Generator) sortSpacesByDependency() []models.Space {
 	return result
 }
 
-// sanitizeResourceName converts an ID to a valid Terraform resource name.
+// sanitizeResourceName converts an ID to a valid Tofu resource name.
 func sanitizeResourceName(id string) string {
 	// Replace invalid characters with underscores
 	re := regexp.MustCompile(`[^a-zA-Z0-9_]`)
@@ -630,7 +704,7 @@ func sanitizeVariableName(id string) string {
 	return name
 }
 
-// formatStringList formats a Go string slice as a Terraform list.
+// formatStringList formats a Go string slice as a Tofu list.
 func formatStringList(items []string) string {
 	if len(items) == 0 {
 		return "[]"

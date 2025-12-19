@@ -48,7 +48,7 @@ DESTINATION_SPACELIFT_SECRET_KEY=your-api-secret-key
 └─────────────────────────────────────────────────────────────────┘
 
 1. DISCOVER & GENERATE
-   spacebridge generate -o ./terraform/ --disabled
+   spacebridge generate -o ./Tofu/ --disabled
 
 2. ENABLE EXTERNAL STATE ACCESS (source)
    spacebridge state enable-access
@@ -56,8 +56,8 @@ DESTINATION_SPACELIFT_SECRET_KEY=your-api-secret-key
 3. VERIFY READINESS
    spacebridge state plan
 
-4. APPLY TERRAFORM (destination)
-   cd ./terraform/ && tofu init && tofu apply
+4. APPLY Tofu (destination)
+   cd ./Tofu/ && tofu init && tofu apply
 
 5. MIGRATE STATE
    spacebridge state migrate
@@ -68,14 +68,14 @@ DESTINATION_SPACELIFT_SECRET_KEY=your-api-secret-key
 
 ### Step-by-Step Guide
 
-#### 1. Generate Terraform Code
+#### 1. Generate Tofu Code
 
 ```bash
-# Generate Terraform for ALL resources (stacks created disabled)
-spacebridge generate -o ./terraform/ --disabled
+# Generate Tofu for ALL resources (stacks created disabled)
+spacebridge generate -o ./Tofu/ --disabled
 
 # Generate for a specific space only
-spacebridge generate -o ./terraform/ --disabled -s your-space-id
+spacebridge generate -o ./Tofu/ --disabled -s your-space-id
 ```
 
 This creates:
@@ -86,7 +86,7 @@ This creates:
 
 #### 2. Enable External State Access
 
-Before state can be downloaded, external state access must be enabled on source stacks (applies to OpenTofu/Terraform stacks):
+Before state can be downloaded, external state access must be enabled on source stacks (applies to OpenTofu/Tofu stacks):
 
 ```bash
 # Enable on all stacks
@@ -111,7 +111,7 @@ This shows:
 #### 4. Apply OpenTofu in Destination
 
 ```bash
-cd ./terraform/
+cd ./Tofu/
 
 # Fill in secret values
 cp secrets.auto.tfvars.template secrets.auto.tfvars
@@ -222,7 +222,7 @@ All commands support `-s, --space` to filter by space ID:
 spacebridge discover spaces
 
 # Migrate only a specific space
-spacebridge generate -o ./terraform/ --disabled -s demo-01K31FVPGCF3656DERFW7YZ0D4
+spacebridge generate -o ./Tofu/ --disabled -s demo-01K31FVPGCF3656DERFW7YZ0D4
 spacebridge state enable-access -s demo-01K31FVPGCF3656DERFW7YZ0D4
 spacebridge state migrate -s demo-01K31FVPGCF3656DERFW7YZ0D4
 spacebridge stacks enable -s demo-01K31FVPGCF3656DERFW7YZ0D4
@@ -271,7 +271,7 @@ export DESTINATION_SPACELIFT_URL=https://new-account.app.spacelift.io
 export DESTINATION_SPACELIFT_KEY_ID=...
 export DESTINATION_SPACELIFT_SECRET_KEY=...
 
-# 2. Generate Terraform (stacks disabled)
+# 2. Generate Tofu (stacks disabled)
 spacebridge generate -o ./migration/ --disabled
 
 # 3. Enable external state access on source
