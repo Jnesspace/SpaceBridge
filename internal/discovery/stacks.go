@@ -17,6 +17,15 @@ func (s *Service) DiscoverStacks(ctx context.Context) ([]models.Stack, error) {
 
 	stacks := make([]models.Stack, 0, len(query.Stacks))
 	for _, st := range query.Stacks {
+		vendorType := string(st.VendorConfig.Typename)
+
+		// Determine external state access based on vendor type
+		// Only Terraform vendor config has ExternalStateAccessEnabled
+		var externalStateAccess bool
+		if vendorType == "StackConfigVendorTerraform" {
+			externalStateAccess = bool(st.VendorConfig.Terraform.ExternalStateAccessEnabled)
+		}
+
 		stack := models.Stack{
 			ID:                         string(st.ID),
 			Name:                       string(st.Name),
@@ -25,7 +34,7 @@ func (s *Service) DiscoverStacks(ctx context.Context) ([]models.Stack, error) {
 			Repository:                 string(st.Repository),
 			Namespace:                  string(st.Namespace),
 			Provider:                   string(st.Provider),
-			VendorType:                 string(st.VendorConfig.Typename),
+			VendorType:                 vendorType,
 			Administrative:             bool(st.Administrative),
 			Autodeploy:                 bool(st.Autodeploy),
 			Autoretry:                  bool(st.Autoretry),
@@ -33,7 +42,7 @@ func (s *Service) DiscoverStacks(ctx context.Context) ([]models.Stack, error) {
 			ProtectFromDeletion:        bool(st.ProtectFromDeletion),
 			IsDisabled:                 bool(st.IsDisabled),
 			ManagesStateFile:           bool(st.ManagesStateFile),
-			ExternalStateAccessEnabled: bool(st.VendorConfig.Terraform.ExternalStateAccessEnabled),
+			ExternalStateAccessEnabled: externalStateAccess,
 			Labels:                     toStringSlice(st.Labels),
 			AdditionalProjectGlobs:     toStringSlice(st.AdditionalProjectGlobs),
 			Hooks: models.Hooks{
@@ -68,9 +77,41 @@ func (s *Service) DiscoverStacks(ctx context.Context) ([]models.Stack, error) {
 			img := string(*st.RunnerImage)
 			stack.RunnerImage = &img
 		}
-		if st.TerraformVersion != nil {
-			tv := string(*st.TerraformVersion)
-			stack.TerraformVersion = &tv
+
+		// Version and workflow tool fields based on vendor type
+		switch vendorType {
+		case "StackConfigVendorTerraform":
+			if st.VendorConfig.Terraform.Version != nil {
+				v := string(*st.VendorConfig.Terraform.Version)
+				stack.TerraformVersion = &v
+			} else if st.TerraformVersion != nil {
+				// Fallback to top-level field
+				tv := string(*st.TerraformVersion)
+				stack.TerraformVersion = &tv
+			}
+			if st.VendorConfig.Terraform.WorkflowTool != nil {
+				wt := string(*st.VendorConfig.Terraform.WorkflowTool)
+				stack.WorkflowTool = &wt
+			}
+		case "StackConfigVendorTerragrunt":
+			if st.VendorConfig.Terragrunt.TerraformVersion != nil {
+				v := string(*st.VendorConfig.Terragrunt.TerraformVersion)
+				stack.TerraformVersion = &v
+			}
+			if st.VendorConfig.Terragrunt.TerragruntVersion != nil {
+				v := string(*st.VendorConfig.Terragrunt.TerragruntVersion)
+				stack.TerragruntVersion = &v
+			}
+			if st.VendorConfig.Terragrunt.Tool != nil {
+				wt := string(*st.VendorConfig.Terragrunt.Tool)
+				stack.WorkflowTool = &wt
+			}
+		default:
+			// For other vendor types, use top-level TerraformVersion if present
+			if st.TerraformVersion != nil {
+				tv := string(*st.TerraformVersion)
+				stack.TerraformVersion = &tv
+			}
 		}
 
 		// Attached contexts

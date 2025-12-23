@@ -38,11 +38,18 @@ type StacksQuery struct {
 		ManagesStateFile       graphql.Boolean  `graphql:"managesStateFile"`
 		Labels                 []graphql.String `graphql:"labels"`
 		AdditionalProjectGlobs []graphql.String `graphql:"additionalProjectGlobs"`
-		VendorConfig           struct {
+		VendorConfig struct {
 			Typename  graphql.String `graphql:"__typename"`
 			Terraform struct {
+				Version                    *graphql.String `graphql:"version"`
+				WorkflowTool               *graphql.String `graphql:"workflowTool"`
 				ExternalStateAccessEnabled graphql.Boolean `graphql:"externalStateAccessEnabled"`
 			} `graphql:"... on StackConfigVendorTerraform"`
+			Terragrunt struct {
+				TerraformVersion  *graphql.String `graphql:"terraformVersion"`
+				TerragruntVersion *graphql.String `graphql:"terragruntVersion"`
+				Tool              *graphql.String `graphql:"tool"`
+			} `graphql:"... on StackConfigVendorTerragrunt"`
 		} `graphql:"vendorConfig"`
 		Hooks struct {
 			AfterApply    []graphql.String `graphql:"afterApply"`
@@ -146,21 +153,39 @@ type StackUpdateMutation struct {
 	} `graphql:"stackUpdate(id: $id, input: $input)"`
 }
 
-// StateDownloadURLMutation gets a pre-signed URL to download stack state.
-type StateDownloadURLMutation struct {
-	StateDownloadURL struct {
-		URL graphql.String `graphql:"url"`
-	} `graphql:"stateDownloadUrl(stack: $stack)"`
-}
-
-// StateUploadURLMutation gets a pre-signed URL to upload stack state.
-type StateUploadURLMutation struct {
-	StateUploadURL struct {
-		URL graphql.String `graphql:"url"`
-	} `graphql:"stateUploadUrl(stack: $stack)"`
-}
+// Note: StateDownloadURL and StateUploadURL mutations now use rawMutate with input format
+// in client.go instead of typed structs, as the API changed to require input objects.
 
 // StackManagedStateImportMutation imports state into a stack.
 type StackManagedStateImportMutation struct {
 	StackManagedStateImport graphql.Boolean `graphql:"stackManagedStateImport(id: $id)"`
 }
+
+// AWSIntegrationsQuery is the GraphQL query for fetching all AWS integrations.
+type AWSIntegrationsQuery struct {
+	AWSIntegrations []struct {
+		ID                          graphql.ID       `graphql:"id"`
+		Name                        graphql.String   `graphql:"name"`
+		RoleARN                     graphql.String   `graphql:"roleArn"`
+		DurationSeconds             graphql.Int      `graphql:"durationSeconds"`
+		GenerateCredentialsInWorker graphql.Boolean  `graphql:"generateCredentialsInWorker"`
+		ExternalID                  *graphql.String  `graphql:"externalId"`
+		Space                       graphql.ID       `graphql:"space"`
+		Labels                      []graphql.String `graphql:"labels"`
+	} `graphql:"awsIntegrations"`
+}
+
+// AzureIntegrationsQuery is the GraphQL query for fetching all Azure integrations.
+type AzureIntegrationsQuery struct {
+	AzureIntegrations []struct {
+		ID                    graphql.ID       `graphql:"id"`
+		Name                  graphql.String   `graphql:"name"`
+		TenantID              graphql.String   `graphql:"tenantId"`
+		DefaultSubscriptionID *graphql.String  `graphql:"defaultSubscriptionId"`
+		ApplicationID         graphql.String   `graphql:"applicationId"`
+		DisplayName           graphql.String   `graphql:"displayName"`
+		Space                 graphql.ID       `graphql:"space"`
+		Labels                []graphql.String `graphql:"labels"`
+	} `graphql:"azureIntegrations"`
+}
+

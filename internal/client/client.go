@@ -198,7 +198,7 @@ func (c *Client) EnableExternalStateAccess(ctx context.Context, stack models.Sta
 			name: $name
 			repository: $repository
 			vendorConfig: {
-				Tofu: {
+				terraform: {
 					externalStateAccessEnabled: true
 				}
 			}
@@ -230,40 +230,111 @@ func (c *Client) EnableExternalStateAccess(ctx context.Context, stack models.Sta
 
 // GetStateDownloadURL gets a pre-signed URL to download stack state.
 func (c *Client) GetStateDownloadURL(ctx context.Context, stackID string) (string, error) {
-	var mutation StateDownloadURLMutation
-	variables := map[string]interface{}{
-		"stack": graphql.ID(stackID),
+	mutation := `mutation GetStateDownloadURL($stackId: ID!) {
+		stateDownloadUrl(input: { stackId: $stackId }) {
+			url
+		}
+	}`
+
+	var result struct {
+		StateDownloadURL struct {
+			URL string `json:"url"`
+		} `json:"stateDownloadUrl"`
 	}
 
-	if err := c.Mutate(ctx, &mutation, variables); err != nil {
+	variables := map[string]interface{}{
+		"stackId": stackID,
+	}
+
+	if err := c.rawMutate(ctx, mutation, variables, &result); err != nil {
 		return "", fmt.Errorf("failed to get state download URL: %w", err)
 	}
 
-	return string(mutation.StateDownloadURL.URL), nil
+	return result.StateDownloadURL.URL, nil
+}
+
+// StateUploadResult contains the upload URL and object ID.
+type StateUploadResult struct {
+	URL      string
+	ObjectID string
 }
 
 // GetStateUploadURL gets a pre-signed URL to upload stack state.
-func (c *Client) GetStateUploadURL(ctx context.Context, stackID string) (string, error) {
-	var mutation StateUploadURLMutation
+func (c *Client) GetStateUploadURL(ctx context.Context, stackID string) (*StateUploadResult, error) {
+	mutation := `mutation GetStateUploadURL {
+		stateUploadUrl {
+			url
+			objectId
+		}
+	}`
+
+	var result struct {
+		StateUploadURL struct {
+			URL      string `json:"url"`
+			ObjectID string `json:"objectId"`
+		} `json:"stateUploadUrl"`
+	}
+
+	if err := c.rawMutate(ctx, mutation, nil, &result); err != nil {
+		return nil, fmt.Errorf("failed to get state upload URL: %w", err)
+	}
+
+	return &StateUploadResult{
+		URL:      result.StateUploadURL.URL,
+		ObjectID: result.StateUploadURL.ObjectID,
+	}, nil
+}
+
+// LockStack locks a stack for exclusive access.
+func (c *Client) LockStack(ctx context.Context, stackID string) error {
+	mutation := `mutation LockStack($id: ID!) {
+		stackLock(id: $id) {
+			id
+		}
+	}`
+
 	variables := map[string]interface{}{
-		"stack": graphql.ID(stackID),
+		"id": stackID,
 	}
 
-	if err := c.Mutate(ctx, &mutation, variables); err != nil {
-		return "", fmt.Errorf("failed to get state upload URL: %w", err)
+	if err := c.rawMutate(ctx, mutation, variables, nil); err != nil {
+		return fmt.Errorf("failed to lock stack: %w", err)
 	}
 
-	return string(mutation.StateUploadURL.URL), nil
+	return nil
+}
+
+// UnlockStack unlocks a previously locked stack.
+func (c *Client) UnlockStack(ctx context.Context, stackID string) error {
+	mutation := `mutation UnlockStack($id: ID!) {
+		stackUnlock(id: $id) {
+			id
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"id": stackID,
+	}
+
+	if err := c.rawMutate(ctx, mutation, variables, nil); err != nil {
+		return fmt.Errorf("failed to unlock stack: %w", err)
+	}
+
+	return nil
 }
 
 // ImportManagedState triggers the state import on a stack.
-func (c *Client) ImportManagedState(ctx context.Context, stackID string) error {
-	var mutation StackManagedStateImportMutation
+func (c *Client) ImportManagedState(ctx context.Context, stackID string, objectID string) error {
+	mutation := `mutation ImportManagedState($stackId: ID!, $state: String!) {
+		stackManagedStateImport(stackId: $stackId, state: $state)
+	}`
+
 	variables := map[string]interface{}{
-		"id": graphql.ID(stackID),
+		"stackId": stackID,
+		"state":   objectID,
 	}
 
-	if err := c.Mutate(ctx, &mutation, variables); err != nil {
+	if err := c.rawMutate(ctx, mutation, variables, nil); err != nil {
 		return fmt.Errorf("failed to import managed state: %w", err)
 	}
 

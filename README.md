@@ -1,6 +1,30 @@
-# SpaceBriddge
+# SpaceBridge
 
-migration toolkit for Spacelift. Migrate stacks, contexts, policies, and OpenTofu state between Spacelift accounts.
+Migration toolkit for Spacelift. Migrate stacks, contexts, policies, and OpenTofu state between Spacelift accounts.
+
+## Important: Read Before Using
+
+**SpaceBridge is not a "run and deploy" tool.** It generates OpenTofu code that you must review and customize before applying.
+
+### What to expect:
+
+- **Review the output** - The generated code is a starting point. You'll likely need to modify it for your specific setup.
+
+- **Spaces are created by default** - If you previously managed spaces via an admin stack or other IaC, you may want to delete the generated space resources to avoid conflicts.
+
+- **VCS integration may differ** - Your destination account might use a different VCS setup (e.g., GitHub App instead of built-in GitHub). Use the `--config` flag to override VCS settings.
+
+- **Blueprints require manual migration** - The Spacelift API doesn't expose blueprints for discovery. Copy these manually from the source account.
+
+- **Secrets require manual entry** - Write-only values (secrets) cannot be read from the API. You'll need to fill these in manually.
+
+### When SpaceBridge is most useful:
+
+- **Exporting ClickOps to IaC** - If your Spacelift configuration was done through the UI (not infrastructure as code), SpaceBridge exports everything as OpenTofu code.
+
+- **Account migrations** - Moving from one Spacelift account to another, including state migration.
+
+- **Disaster recovery** - Creating a code-based backup of your Spacelift configuration.
 
 ## Features
 
@@ -185,7 +209,55 @@ Flags:
   -m, --manifest string   Input manifest file (optional)
   -d, --disabled          Create stacks as disabled for safe migration
   -s, --space string      Only include resources from this space
+  -c, --config string     Migration config YAML file for VCS overrides
 ```
+
+## VCS Integration Override
+
+If your destination account uses a different VCS integration (e.g., GitHub App instead of built-in GitHub), create a config file:
+
+```yaml
+# spacebridge.yaml
+destination:
+  vcs:
+    github_enterprise:
+      id: "your-github-app-id"
+      namespace: "YourOrg"
+```
+
+Then generate with the config:
+
+```bash
+spacebridge generate -o ./tofu/ -c spacebridge.yaml
+```
+
+This adds the VCS block to all generated stacks:
+
+```hcl
+resource "spacelift_stack" "example" {
+  name       = "example"
+  repository = "my-repo"
+  branch     = "main"
+
+  github_enterprise {
+    id        = "your-github-app-id"
+    namespace = "YourOrg"
+  }
+  # ...
+}
+```
+
+### Supported VCS integrations:
+
+| Config Key | Use Case |
+|------------|----------|
+| `github_enterprise` | GitHub App (custom integration) |
+| `gitlab` | GitLab (self-hosted or custom) |
+| `bitbucket_datacenter` | Bitbucket Data Center |
+| `bitbucket_cloud` | Bitbucket Cloud |
+| `azure_devops` | Azure DevOps |
+
+See `spacebridge.example.yaml` for a complete example.
 
 ### State Commands
 

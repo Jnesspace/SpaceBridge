@@ -6,6 +6,7 @@ require (
 	github.com/hasura/go-graphql-client v0.12.1
 	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.8.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

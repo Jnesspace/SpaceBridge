@@ -11,10 +11,12 @@ type Stack struct {
 	Namespace                  string              `json:"namespace"`
 	ProjectRoot                *string             `json:"projectRoot,omitempty"`
 	Provider                   string              `json:"provider"`   // VCS provider (GITHUB, GITLAB, etc.)
-	VendorType                 string              `json:"vendorType"` // Stack type (Tofu, ANSIBLE, KUBERNETES, etc.)
+	VendorType                 string              `json:"vendorType"` // Stack type (StackConfigVendorTerraform, StackConfigVendorOpenTofu, etc.)
 	RepositoryURL              *string             `json:"repositoryURL,omitempty"`
 	RunnerImage                *string             `json:"runnerImage,omitempty"`
 	TerraformVersion           *string             `json:"terraformVersion,omitempty"`
+	TerragruntVersion          *string             `json:"terragruntVersion,omitempty"`
+	WorkflowTool               *string             `json:"workflowTool,omitempty"` // TERRAFORM, OPEN_TOFU, TERRAGRUNT, CUSTOM
 	Administrative             bool                `json:"administrative"`
 	Autodeploy                 bool                `json:"autodeploy"`
 	Autoretry                  bool                `json:"autoretry"`
@@ -34,11 +36,22 @@ type Stack struct {
 // IsTerraform returns true if the stack is a Terraform/OpenTofu/Terragrunt stack.
 func (s *Stack) IsTerraform() bool {
 	switch s.VendorType {
-	case "StackConfigVendorTerraform", "StackConfigVendorTerragrunt":
+	case "StackConfigVendorTerraform", "StackConfigVendorOpenTofu", "StackConfigVendorTerragrunt":
 		return true
 	default:
 		return false
 	}
+}
+
+// IsOpenTofu returns true if the stack uses OpenTofu.
+func (s *Stack) IsOpenTofu() bool {
+	return s.WorkflowTool != nil && *s.WorkflowTool == "OPEN_TOFU"
+}
+
+// IsTerragrunt returns true if the stack uses Terragrunt.
+func (s *Stack) IsTerragrunt() bool {
+	return s.VendorType == "StackConfigVendorTerragrunt" ||
+		(s.WorkflowTool != nil && *s.WorkflowTool == "TERRAGRUNT")
 }
 
 // Hooks represents the hooks configured on a stack or context.

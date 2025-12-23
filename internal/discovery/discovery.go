@@ -53,25 +53,43 @@ func (s *Service) DiscoverAll(ctx context.Context) (*Manifest, error) {
 	}
 	manifest.Stacks = stacks
 
+	// Discover AWS integrations
+	awsIntegrations, err := s.DiscoverAWSIntegrations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover AWS integrations: %w", err)
+	}
+	manifest.AWSIntegrations = awsIntegrations
+
+	// Discover Azure integrations
+	azureIntegrations, err := s.DiscoverAzureIntegrations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover Azure integrations: %w", err)
+	}
+	manifest.AzureIntegrations = azureIntegrations
+
 	return manifest, nil
 }
 
 // Manifest represents a complete export of all resources.
 type Manifest struct {
-	SourceURL string           `json:"sourceUrl"`
-	Spaces    []models.Space   `json:"spaces"`
-	Stacks    []models.Stack   `json:"stacks"`
-	Contexts  []models.Context `json:"contexts"`
-	Policies  []models.Policy  `json:"policies"`
+	SourceURL         string                    `json:"sourceUrl"`
+	Spaces            []models.Space            `json:"spaces"`
+	Stacks            []models.Stack            `json:"stacks"`
+	Contexts          []models.Context          `json:"contexts"`
+	Policies          []models.Policy           `json:"policies"`
+	AWSIntegrations   []models.AWSIntegration   `json:"awsIntegrations"`
+	AzureIntegrations []models.AzureIntegration `json:"azureIntegrations"`
 }
 
 // Summary returns a summary of the manifest contents.
 func (m *Manifest) Summary() map[string]int {
 	return map[string]int{
-		"spaces":   len(m.Spaces),
-		"stacks":   len(m.Stacks),
-		"contexts": len(m.Contexts),
-		"policies": len(m.Policies),
+		"spaces":            len(m.Spaces),
+		"stacks":            len(m.Stacks),
+		"contexts":          len(m.Contexts),
+		"policies":          len(m.Policies),
+		"awsIntegrations":   len(m.AWSIntegrations),
+		"azureIntegrations": len(m.AzureIntegrations),
 	}
 }
 

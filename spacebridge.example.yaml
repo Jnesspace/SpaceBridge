@@ -1,0 +1,37 @@
+# SpaceBridge Migration Configuration
+#
+# This file configures how resources are transformed when migrating
+# from source to destination Spacelift accounts.
+#
+# Usage:
+#   spacebridge generate -c spacebridge.yaml -o ./tofu/
+
+destination:
+  vcs:
+    # Configure the VCS integration for the destination account.
+    # Only ONE of these sections should be uncommented.
+
+    # GitHub App (custom GitHub integration)
+    github_enterprise:
+      id: "gh-app"           # The ID of your GitHub App integration in Spacelift
+      namespace: "MyOrg"     # Your GitHub organization or username
+
+    # GitLab (self-hosted or custom integration)
+    # gitlab:
+    #   id: "gitlab-app"
+    #   namespace: "MyGroup"
+
+    # Bitbucket Data Center
+    # bitbucket_datacenter:
+    #   id: "bb-dc-app"
+    #   namespace: "PROJ"      # Bitbucket project key
+
+    # Bitbucket Cloud
+    # bitbucket_cloud:
+    #   id: "bb-cloud-app"
+    #   namespace: "my-workspace"
+
+    # Azure DevOps
+    # azure_devops:
+    #   id: "ado-app"
+    #   project: "MyProject"

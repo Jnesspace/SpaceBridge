@@ -18,9 +18,10 @@ import (
 type Generator struct {
 	manifest        *discovery.Manifest
 	outputDir       string
-	safeMode        bool                  // Force autodeploy=false for safe state migration
-	autodeployList  []string              // Stacks that originally had autodeploy=true
-	destConfig      *config.AccountConfig // Destination account config for provider
+	safeMode        bool                     // Force autodeploy=false for safe state migration
+	autodeployList  []string                 // Stacks that originally had autodeploy=true
+	destConfig      *config.AccountConfig    // Destination account config for provider
+	migrationConfig *config.MigrationConfig  // Migration config for VCS overrides
 }
 
 // New creates a new generator.
@@ -40,6 +41,12 @@ func (g *Generator) WithSafeMode(safe bool) *Generator {
 // WithDestinationConfig sets the destination account config for provider.tf.
 func (g *Generator) WithDestinationConfig(cfg *config.AccountConfig) *Generator {
 	g.destConfig = cfg
+	return g
+}
+
+// WithMigrationConfig sets the migration config for VCS overrides.
+func (g *Generator) WithMigrationConfig(cfg *config.MigrationConfig) *Generator {
+	g.migrationConfig = cfg
 	return g
 }
 
@@ -240,6 +247,55 @@ func (g *Generator) generateMain() (string, error) {
 		}
 	}
 
+	// Generate admin role attachments (replaces deprecated administrative = true)
+	hasAdminStacks := false
+	for _, stack := range g.manifest.Stacks {
+		if stack.Administrative {
+			hasAdminStacks = true
+			break
+		}
+	}
+	if hasAdminStacks {
+		sb.WriteString("# =============================================================================\n")
+		sb.WriteString("# ADMIN ROLE & ATTACHMENTS\n")
+		sb.WriteString("# Replaces deprecated 'administrative = true' flag on stacks\n")
+		sb.WriteString("# =============================================================================\n\n")
+		sb.WriteString(g.generateAdminRole())
+		sb.WriteString("\n")
+		for _, stack := range g.manifest.Stacks {
+			if stack.Administrative {
+				sb.WriteString(g.generateAdminRoleAttachment(stack))
+				sb.WriteString("\n")
+			}
+		}
+	}
+
+	// Generate AWS integrations
+	sb.WriteString("# =============================================================================\n")
+	sb.WriteString("# AWS INTEGRATIONS\n")
+	sb.WriteString("# =============================================================================\n\n")
+	if len(g.manifest.AWSIntegrations) > 0 {
+		sb.WriteString("# NOTE: AWS integrations require IAM trust policy updates in your AWS account.\n")
+		sb.WriteString("# The destination Spacelift account's OIDC provider must be trusted by the IAM role.\n\n")
+	}
+	for _, integration := range g.manifest.AWSIntegrations {
+		sb.WriteString(g.generateAWSIntegration(integration))
+		sb.WriteString("\n")
+	}
+
+	// Generate Azure integrations
+	sb.WriteString("# =============================================================================\n")
+	sb.WriteString("# AZURE INTEGRATIONS\n")
+	sb.WriteString("# =============================================================================\n\n")
+	if len(g.manifest.AzureIntegrations) > 0 {
+		sb.WriteString("# NOTE: Azure integrations require app registration updates in Azure AD.\n")
+		sb.WriteString("# The destination Spacelift account must be configured as a trusted identity provider.\n\n")
+	}
+	for _, integration := range g.manifest.AzureIntegrations {
+		sb.WriteString(g.generateAzureIntegration(integration))
+		sb.WriteString("\n")
+	}
+
 	return sb.String(), nil
 }
 
@@ -404,6 +460,9 @@ func (g *Generator) generateStack(stack models.Stack) string {
 		sb.WriteString("  space_id   = \"root\"\n")
 	}
 
+	// VCS integration override from migration config
+	g.writeVCSConfig(&sb, stack)
+
 	if stack.Description != nil && *stack.Description != "" {
 		sb.WriteString(fmt.Sprintf("  description = %q\n", *stack.Description))
 	}
@@ -412,15 +471,25 @@ func (g *Generator) generateStack(stack models.Stack) string {
 		sb.WriteString(fmt.Sprintf("  project_root = %q\n", *stack.ProjectRoot))
 	}
 
+	// Workflow tool and version based on vendor type
+	if stack.WorkflowTool != nil && *stack.WorkflowTool != "" && *stack.WorkflowTool != "TERRAFORM" {
+		sb.WriteString(fmt.Sprintf("  terraform_workflow_tool = %q\n", *stack.WorkflowTool))
+	}
+
+	// Version fields
 	if stack.TerraformVersion != nil && *stack.TerraformVersion != "" {
 		sb.WriteString(fmt.Sprintf("  terraform_version = %q\n", *stack.TerraformVersion))
+	}
+	if stack.TerragruntVersion != nil && *stack.TerragruntVersion != "" {
+		sb.WriteString(fmt.Sprintf("  terragrunt_version = %q\n", *stack.TerragruntVersion))
 	}
 
 	if stack.RunnerImage != nil && *stack.RunnerImage != "" {
 		sb.WriteString(fmt.Sprintf("  runner_image = %q\n", *stack.RunnerImage))
 	}
 
-	sb.WriteString(fmt.Sprintf("  administrative         = %t\n", stack.Administrative))
+	// Note: administrative flag is deprecated - use spacelift_role_attachment instead
+	// Role attachment is generated separately for administrative stacks
 
 	// In safe mode, force autodeploy=false to prevent runs during migration
 	autodeploy := stack.Autodeploy
@@ -492,6 +561,143 @@ func (g *Generator) generateStackDependency(stackID string, dep models.StackDepe
 	sb.WriteString(fmt.Sprintf("  depends_on_stack_id = spacelift_stack.%s.id\n", dependsOnResource))
 	sb.WriteString("}\n")
 	return sb.String()
+}
+
+// generateAdminRoleAttachment creates Tofu for an admin role attachment.
+// This replaces the deprecated administrative = true flag on stacks.
+func (g *Generator) generateAdminRoleAttachment(stack models.Stack) string {
+	stackResource := sanitizeResourceName(stack.ID)
+	resourceName := sanitizeResourceName(stack.ID + "_admin_role")
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("resource \"spacelift_role_attachment\" %q {\n", resourceName))
+	sb.WriteString("  role_id  = spacelift_role.space_admin.id\n")
+	sb.WriteString(fmt.Sprintf("  stack_id = spacelift_stack.%s.id\n", stackResource))
+	// Use the stack's space for the role binding
+	if stack.Space == "root" {
+		sb.WriteString("  space_id = \"root\"\n")
+	} else {
+		spaceResource := sanitizeResourceName(stack.Space)
+		sb.WriteString(fmt.Sprintf("  space_id = spacelift_space.%s.id\n", spaceResource))
+	}
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+// generateAdminRole creates the shared SPACE_ADMIN role for administrative stacks.
+func (g *Generator) generateAdminRole() string {
+	var sb strings.Builder
+	sb.WriteString("# Shared role for administrative stacks (replaces deprecated administrative = true)\n")
+	sb.WriteString("resource \"spacelift_role\" \"space_admin\" {\n")
+	sb.WriteString("  name    = \"Space Admin (Migration)\"\n")
+	sb.WriteString("  actions = [\"SPACE_ADMIN\"]\n")
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+// generateAWSIntegration creates Tofu for an AWS integration.
+func (g *Generator) generateAWSIntegration(integration models.AWSIntegration) string {
+	resourceName := sanitizeResourceName(integration.ID)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("resource \"spacelift_aws_integration\" %q {\n", resourceName))
+	sb.WriteString(fmt.Sprintf("  name     = %q\n", integration.Name))
+	sb.WriteString(fmt.Sprintf("  role_arn = %q\n", integration.RoleARN))
+
+	// Space reference
+	if integration.Space != "root" {
+		spaceResource := sanitizeResourceName(integration.Space)
+		sb.WriteString(fmt.Sprintf("  space_id = spacelift_space.%s.id\n", spaceResource))
+	} else {
+		sb.WriteString("  space_id = \"root\"\n")
+	}
+
+	if integration.DurationSeconds > 0 {
+		sb.WriteString(fmt.Sprintf("  duration_seconds = %d\n", integration.DurationSeconds))
+	}
+
+	sb.WriteString(fmt.Sprintf("  generate_credentials_in_worker = %t\n", integration.GenerateCredentialsInWorker))
+
+	if integration.ExternalID != nil && *integration.ExternalID != "" {
+		sb.WriteString(fmt.Sprintf("  external_id = %q\n", *integration.ExternalID))
+	}
+
+	if len(integration.Labels) > 0 {
+		sb.WriteString(fmt.Sprintf("  labels = %s\n", formatStringList(integration.Labels)))
+	}
+
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+// generateAzureIntegration creates Tofu for an Azure integration.
+func (g *Generator) generateAzureIntegration(integration models.AzureIntegration) string {
+	resourceName := sanitizeResourceName(integration.ID)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("resource \"spacelift_azure_integration\" %q {\n", resourceName))
+	sb.WriteString(fmt.Sprintf("  name       = %q\n", integration.Name))
+	sb.WriteString(fmt.Sprintf("  tenant_id  = %q\n", integration.TenantID))
+	sb.WriteString(fmt.Sprintf("  application_id = %q\n", integration.ApplicationID))
+
+	// Space reference
+	if integration.Space != "root" {
+		spaceResource := sanitizeResourceName(integration.Space)
+		sb.WriteString(fmt.Sprintf("  space_id = spacelift_space.%s.id\n", spaceResource))
+	} else {
+		sb.WriteString("  space_id = \"root\"\n")
+	}
+
+	if integration.DefaultSubscriptionID != nil && *integration.DefaultSubscriptionID != "" {
+		sb.WriteString(fmt.Sprintf("  default_subscription_id = %q\n", *integration.DefaultSubscriptionID))
+	}
+
+	if len(integration.Labels) > 0 {
+		sb.WriteString(fmt.Sprintf("  labels = %s\n", formatStringList(integration.Labels)))
+	}
+
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+// writeVCSConfig writes VCS integration configuration based on migration config.
+func (g *Generator) writeVCSConfig(sb *strings.Builder, stack models.Stack) {
+	if g.migrationConfig == nil {
+		return
+	}
+
+	vcs := &g.migrationConfig.Destination.VCS
+	if !vcs.HasVCSOverride() {
+		return
+	}
+
+	// Write the appropriate VCS block based on config
+	if vcs.GithubEnterprise != nil {
+		sb.WriteString("\n  github_enterprise {\n")
+		sb.WriteString(fmt.Sprintf("    id        = %q\n", vcs.GithubEnterprise.ID))
+		sb.WriteString(fmt.Sprintf("    namespace = %q\n", vcs.GithubEnterprise.Namespace))
+		sb.WriteString("  }\n")
+	} else if vcs.Gitlab != nil {
+		sb.WriteString("\n  gitlab {\n")
+		sb.WriteString(fmt.Sprintf("    id        = %q\n", vcs.Gitlab.ID))
+		sb.WriteString(fmt.Sprintf("    namespace = %q\n", vcs.Gitlab.Namespace))
+		sb.WriteString("  }\n")
+	} else if vcs.BitbucketDatacenter != nil {
+		sb.WriteString("\n  bitbucket_datacenter {\n")
+		sb.WriteString(fmt.Sprintf("    id        = %q\n", vcs.BitbucketDatacenter.ID))
+		sb.WriteString(fmt.Sprintf("    namespace = %q\n", vcs.BitbucketDatacenter.Namespace))
+		sb.WriteString("  }\n")
+	} else if vcs.BitbucketCloud != nil {
+		sb.WriteString("\n  bitbucket_cloud {\n")
+		sb.WriteString(fmt.Sprintf("    id        = %q\n", vcs.BitbucketCloud.ID))
+		sb.WriteString(fmt.Sprintf("    namespace = %q\n", vcs.BitbucketCloud.Namespace))
+		sb.WriteString("  }\n")
+	} else if vcs.AzureDevops != nil {
+		sb.WriteString("\n  azure_devops {\n")
+		sb.WriteString(fmt.Sprintf("    id      = %q\n", vcs.AzureDevops.ID))
+		sb.WriteString(fmt.Sprintf("    project = %q\n", vcs.AzureDevops.Project))
+		sb.WriteString("  }\n")
+	}
 }
 
 // writeHooks writes hook configuration to the string builder.
