@@ -11,6 +11,7 @@ import (
 	"github.com/jnesspace/spacebridge/internal/models"
 )
 
+
 // newStateCmd creates the state command group.
 func newStateCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -45,6 +46,47 @@ Stacks are categorized as:
 	return cmd
 }
 
+// resolveSpaceFilter resolves a space filter (ID, name, or name-ID format) to a space ID.
+// Returns the resolved space ID and the display name for output.
+// Supports formats: "01ABC..." (ID), "migration" (name), "migration-01ABC..." (name-ID)
+func resolveSpaceFilter(ctx context.Context, svc *discovery.Service, filter string) (spaceID string, displayName string, err error) {
+	spaces, err := svc.DiscoverSpaces(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to discover spaces: %w", err)
+	}
+
+	// Build a map for quick lookup
+	spaceByID := make(map[string]models.Space)
+	for _, space := range spaces {
+		spaceByID[space.ID] = space
+	}
+
+	// First, try to match by exact ID
+	if space, ok := spaceByID[filter]; ok {
+		return space.ID, space.Name, nil
+	}
+
+	// Then, try to match by name (case-sensitive)
+	for _, space := range spaces {
+		if space.Name == filter {
+			return space.ID, space.Name, nil
+		}
+	}
+
+	// Finally, try to extract ID from "name-ID" format (e.g., "migration-01ABC...")
+	// Find the last hyphen and check if the suffix is a valid space ID
+	for i := len(filter) - 1; i >= 0; i-- {
+		if filter[i] == '-' {
+			potentialID := filter[i+1:]
+			if space, ok := spaceByID[potentialID]; ok {
+				return space.ID, space.Name, nil
+			}
+		}
+	}
+
+	return "", "", fmt.Errorf("space not found: %s", filter)
+}
+
 // runStatePlan shows the state migration plan.
 func runStatePlan(spaceFilter string) error {
 	svc, err := createDiscoveryService()
@@ -62,10 +104,14 @@ func runStatePlan(spaceFilter string) error {
 
 	// Filter by space if specified
 	if spaceFilter != "" {
-		fmt.Printf("Filtering to space: %s\n", spaceFilter)
+		spaceID, spaceName, err := resolveSpaceFilter(ctx, svc, spaceFilter)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Filtering to space: %s (ID: %s)\n", spaceName, spaceID)
 		var filtered []models.Stack
 		for _, stack := range stacks {
-			if stack.Space == spaceFilter {
+			if stack.Space == spaceID {
 				filtered = append(filtered, stack)
 			}
 		}
@@ -190,10 +236,14 @@ func runStateEnableAccess(spaceFilter string) error {
 
 	// Filter by space if specified
 	if spaceFilter != "" {
-		fmt.Printf("Filtering to space: %s\n", spaceFilter)
+		spaceID, spaceName, err := resolveSpaceFilter(ctx, svc, spaceFilter)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Filtering to space: %s (ID: %s)\n", spaceName, spaceID)
 		var filtered []models.Stack
 		for _, stack := range stacks {
-			if stack.Space == spaceFilter {
+			if stack.Space == spaceID {
 				filtered = append(filtered, stack)
 			}
 		}
@@ -305,14 +355,22 @@ func runStateMigrate(dryRun bool, spaceFilter string) error {
 
 	fmt.Printf("Source:      %s\n", cfg.Source.URL)
 	fmt.Printf("Destination: %s\n", cfg.Destination.URL)
-	if spaceFilter != "" {
-		fmt.Printf("Space:       %s\n", spaceFilter)
-	}
 
 	// Discover stacks from both accounts
 	fmt.Println("\nDiscovering stacks...")
 	sourceSvc := discovery.New(sourceClient)
 	destSvc := discovery.New(destClient)
+
+	// Resolve space filter if specified (using source account spaces)
+	var resolvedSpaceID string
+	if spaceFilter != "" {
+		spaceID, spaceName, err := resolveSpaceFilter(ctx, sourceSvc, spaceFilter)
+		if err != nil {
+			return err
+		}
+		resolvedSpaceID = spaceID
+		fmt.Printf("Space:       %s (ID: %s)\n", spaceName, spaceID)
+	}
 
 	sourceStacks, err := sourceSvc.DiscoverStacks(ctx)
 	if err != nil {
@@ -320,10 +378,10 @@ func runStateMigrate(dryRun bool, spaceFilter string) error {
 	}
 
 	// Filter source stacks by space if specified
-	if spaceFilter != "" {
+	if resolvedSpaceID != "" {
 		var filtered []models.Stack
 		for _, stack := range sourceStacks {
-			if stack.Space == spaceFilter {
+			if stack.Space == resolvedSpaceID {
 				filtered = append(filtered, stack)
 			}
 		}
