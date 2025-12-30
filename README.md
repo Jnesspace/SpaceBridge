@@ -1,6 +1,6 @@
 # SpaceBridge
 
-un official migration toolkit for Spacelift. Migrate stacks, contexts, policies, and OpenTofu state between Spacelift accounts.
+unofficial migration toolkit for Spacelift. Migrate stacks, contexts, policies, and OpenTofu state between Spacelift accounts.
 
 ## Important: Read Before Using
 
