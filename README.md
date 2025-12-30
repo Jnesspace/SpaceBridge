@@ -1,6 +1,6 @@
 # SpaceBridge
 
-Migration toolkit for Spacelift. Migrate stacks, contexts, policies, and OpenTofu state between Spacelift accounts.
+un official migration toolkit for Spacelift. Migrate stacks, contexts, policies, and OpenTofu state between Spacelift accounts.
 
 ## Important: Read Before Using
 
@@ -72,22 +72,22 @@ DESTINATION_SPACELIFT_SECRET_KEY=your-api-secret-key
 └─────────────────────────────────────────────────────────────────┘
 
 1. DISCOVER & GENERATE
-   spacebridge generate -o ./Tofu/ --disabled
+   ./bin/spacebridge generate -o ./Tofu/ --disabled
 
 2. ENABLE EXTERNAL STATE ACCESS (source)
-   spacebridge state enable-access
+   ./bin/spacebridge state enable-access
 
 3. VERIFY READINESS
-   spacebridge state plan
+   ./bin/spacebridge state plan
 
 4. APPLY Tofu (destination)
    cd ./Tofu/ && tofu init && tofu apply
 
 5. MIGRATE STATE
-   spacebridge state migrate
+   cd .. && ./bin/spacebridge state migrate
 
 6. ENABLE STACKS (destination)
-   spacebridge stacks enable
+   ./bin/spacebridge stacks enable
 ```
 
 ### Step-by-Step Guide
