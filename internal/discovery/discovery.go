@@ -67,6 +67,45 @@ func (s *Service) DiscoverAll(ctx context.Context) (*Manifest, error) {
 	}
 	manifest.AzureIntegrations = azureIntegrations
 
+	// Discover integration attachments and associate with stacks
+	// Build a map of stackID -> stack index for quick lookup
+	stackIndex := make(map[string]int)
+	for i, stack := range manifest.Stacks {
+		stackIndex[stack.ID] = i
+	}
+
+	// Discover AWS integration attachments
+	for _, integration := range awsIntegrations {
+		attachments, err := s.DiscoverAWSIntegrationAttachments(ctx, integration.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to discover AWS integration attachments for %s: %w", integration.Name, err)
+		}
+		for stackID, attachment := range attachments {
+			if idx, ok := stackIndex[stackID]; ok {
+				manifest.Stacks[idx].AttachedAWSIntegrations = append(
+					manifest.Stacks[idx].AttachedAWSIntegrations,
+					attachment,
+				)
+			}
+		}
+	}
+
+	// Discover Azure integration attachments
+	for _, integration := range azureIntegrations {
+		attachments, err := s.DiscoverAzureIntegrationAttachments(ctx, integration.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to discover Azure integration attachments for %s: %w", integration.Name, err)
+		}
+		for stackID, attachment := range attachments {
+			if idx, ok := stackIndex[stackID]; ok {
+				manifest.Stacks[idx].AttachedAzureIntegrations = append(
+					manifest.Stacks[idx].AttachedAzureIntegrations,
+					attachment,
+				)
+			}
+		}
+	}
+
 	return manifest, nil
 }
 

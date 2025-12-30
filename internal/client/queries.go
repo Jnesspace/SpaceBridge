@@ -189,3 +189,28 @@ type AzureIntegrationsQuery struct {
 	} `graphql:"azureIntegrations"`
 }
 
+// AWSIntegrationAttachmentsQuery fetches all stack attachments for an AWS integration.
+type AWSIntegrationAttachmentsQuery struct {
+	AWSIntegration *struct {
+		AttachedStacks []struct {
+			StackID graphql.ID      `graphql:"stackId"`
+			IsModule graphql.Boolean `graphql:"isModule"`
+			Read    graphql.Boolean `graphql:"read"`
+			Write   graphql.Boolean `graphql:"write"`
+		} `graphql:"attachedStacks"`
+	} `graphql:"awsIntegration(id: $id)"`
+}
+
+// AzureIntegrationAttachmentsQuery fetches all stack attachments for an Azure integration.
+type AzureIntegrationAttachmentsQuery struct {
+	AzureIntegration *struct {
+		AttachedStacks []struct {
+			StackID        graphql.ID      `graphql:"stackId"`
+			IsModule       graphql.Boolean `graphql:"isModule"`
+			Read           graphql.Boolean `graphql:"read"`
+			Write          graphql.Boolean `graphql:"write"`
+			SubscriptionID *graphql.String `graphql:"subscriptionId"`
+		} `graphql:"attachedStacks"`
+	} `graphql:"azureIntegration(id: $id)"`
+}
+

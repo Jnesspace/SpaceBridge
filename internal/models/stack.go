@@ -28,9 +28,11 @@ type Stack struct {
 	Labels                     []string            `json:"labels"`
 	AdditionalProjectGlobs     []string            `json:"additionalProjectGlobs"`
 	Hooks                      Hooks               `json:"hooks"`
-	AttachedContexts           []ContextAttachment `json:"attachedContexts,omitempty"`
-	AttachedPolicies           []PolicyAttachment  `json:"attachedPolicies,omitempty"`
-	DependsOn                  []StackDependency   `json:"dependsOn,omitempty"`
+	AttachedContexts            []ContextAttachment        `json:"attachedContexts,omitempty"`
+	AttachedPolicies            []PolicyAttachment         `json:"attachedPolicies,omitempty"`
+	DependsOn                   []StackDependency          `json:"dependsOn,omitempty"`
+	AttachedAWSIntegrations     []AWSIntegrationAttachment   `json:"attachedAWSIntegrations,omitempty"`
+	AttachedAzureIntegrations   []AzureIntegrationAttachment `json:"attachedAzureIntegrations,omitempty"`
 }
 
 // IsTerraform returns true if the stack is a Terraform/OpenTofu/Terragrunt stack.

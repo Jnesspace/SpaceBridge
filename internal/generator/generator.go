@@ -296,6 +296,28 @@ func (g *Generator) generateMain() (string, error) {
 		sb.WriteString("\n")
 	}
 
+	// Generate AWS integration attachments
+	sb.WriteString("# =============================================================================\n")
+	sb.WriteString("# AWS INTEGRATION ATTACHMENTS\n")
+	sb.WriteString("# =============================================================================\n\n")
+	for _, stack := range g.manifest.Stacks {
+		for _, attachment := range stack.AttachedAWSIntegrations {
+			sb.WriteString(g.generateAWSIntegrationAttachment(stack.ID, attachment))
+			sb.WriteString("\n")
+		}
+	}
+
+	// Generate Azure integration attachments
+	sb.WriteString("# =============================================================================\n")
+	sb.WriteString("# AZURE INTEGRATION ATTACHMENTS\n")
+	sb.WriteString("# =============================================================================\n\n")
+	for _, stack := range g.manifest.Stacks {
+		for _, attachment := range stack.AttachedAzureIntegrations {
+			sb.WriteString(g.generateAzureIntegrationAttachment(stack.ID, attachment))
+			sb.WriteString("\n")
+		}
+	}
+
 	return sb.String(), nil
 }
 
@@ -656,6 +678,41 @@ func (g *Generator) generateAzureIntegration(integration models.AzureIntegration
 		sb.WriteString(fmt.Sprintf("  labels = %s\n", formatStringList(integration.Labels)))
 	}
 
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+// generateAWSIntegrationAttachment creates Tofu for an AWS integration attachment to a stack.
+func (g *Generator) generateAWSIntegrationAttachment(stackID string, attachment models.AWSIntegrationAttachment) string {
+	stackResource := sanitizeResourceName(stackID)
+	integrationResource := sanitizeResourceName(attachment.IntegrationID)
+	resourceName := sanitizeResourceName(stackID + "_aws_" + attachment.IntegrationID)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("resource \"spacelift_aws_integration_attachment\" %q {\n", resourceName))
+	sb.WriteString(fmt.Sprintf("  integration_id = spacelift_aws_integration.%s.id\n", integrationResource))
+	sb.WriteString(fmt.Sprintf("  stack_id       = spacelift_stack.%s.id\n", stackResource))
+	sb.WriteString(fmt.Sprintf("  read           = %t\n", attachment.Read))
+	sb.WriteString(fmt.Sprintf("  write          = %t\n", attachment.Write))
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+// generateAzureIntegrationAttachment creates Tofu for an Azure integration attachment to a stack.
+func (g *Generator) generateAzureIntegrationAttachment(stackID string, attachment models.AzureIntegrationAttachment) string {
+	stackResource := sanitizeResourceName(stackID)
+	integrationResource := sanitizeResourceName(attachment.IntegrationID)
+	resourceName := sanitizeResourceName(stackID + "_azure_" + attachment.IntegrationID)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("resource \"spacelift_azure_integration_attachment\" %q {\n", resourceName))
+	sb.WriteString(fmt.Sprintf("  integration_id = spacelift_azure_integration.%s.id\n", integrationResource))
+	sb.WriteString(fmt.Sprintf("  stack_id       = spacelift_stack.%s.id\n", stackResource))
+	sb.WriteString(fmt.Sprintf("  read           = %t\n", attachment.Read))
+	sb.WriteString(fmt.Sprintf("  write          = %t\n", attachment.Write))
+	if attachment.SubscriptionID != nil && *attachment.SubscriptionID != "" {
+		sb.WriteString(fmt.Sprintf("  subscription_id = %q\n", *attachment.SubscriptionID))
+	}
 	sb.WriteString("}\n")
 	return sb.String()
 }
